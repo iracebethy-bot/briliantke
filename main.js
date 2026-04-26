@@ -1,4 +1,8 @@
-const Pop3Command = require("node-pop3"); // 请运行 npm install node-pop3
+const http = require('http');
+http.createServer((req, res) => {
+  res.write('Xiao Ke is running!');
+  res.end();
+}).listen(process.env.PORT || 3000); // 这行就是给 Render 看的“门牌号”const Pop3Command = require("node-pop3"); // 请运行 npm install node-pop3
 const { simpleParser } = require('mailparser');
 const nodemailer = require("nodemailer");
 const fs = require('fs');
