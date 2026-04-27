@@ -1,45 +1,48 @@
 const http = require('http');
-const notifier = require('mail-notifier');
+const { MailListener } = require('mail-listener5');
 
 // 1. Render 呼吸服务
 const port = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('小克助理（工业级版）运行中...');
+  res.end('小克助理（最新稳健版）运行中...');
 }).listen(port);
 
-// 2. 邮箱配置 (直接使用 IMAP，163 邮箱也支持，比 POP3 更实时)
-const imapConfig = {
-  user: process.env.MAIL_USER,
-  password: process.env.MAIL_PASS, // 你的授权码
+// 2. 邮箱配置 (使用 IMAP)
+const mailListener = new MailListener({
+  username: process.env.MAIL_USER,
+  password: process.env.MAIL_PASS,
   host: "imap.163.com",
   port: 993,
   tls: true,
-  autostart: true
-};
+  connTimeout: 10000,
+  authTimeout: 10000,
+  autostart: true,
+  mailbox: "INBOX",
+  markSeen: false // 保持邮件为未读
+});
 
 // 3. 监听逻辑
-const n = notifier(imapConfig);
+mailListener.on("server:connected", () => {
+  console.log(`[${new Date().toLocaleString()}] ✅ 成功连接到 163 邮筒！`);
+});
 
-n.on('end', () => n.start()); // 断开自动重连
-
-n.on('mail', (mail) => {
-  console.log(`[${new Date().toLocaleString()}] 📩 收到新邮件! 来自: ${mail.from[0].address}`);
-  console.log(`主题: ${mail.subject}`);
+mailListener.on("mail", (mail) => {
+  console.log(`[${new Date().toLocaleString()}] 📩 收到新邮件！主题: ${mail.subject}`);
   
-  // 查找内容里的链接
+  // 查找链接
+  const content = mail.text || "";
   const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const urls = mail.text.match(urlRegex);
+  const urls = content.match(urlRegex);
   
   if (urls) {
-    console.log(`🔗 抓到链接: ${urls.join(', ')}`);
-    // 后续可以在这里加写入 GitHub 的代码
+    console.log(`🔗 成功抓取链接: ${urls.join(', ')}`);
   }
 });
 
-n.on('error', (err) => {
+mailListener.on("error", (err) => {
   console.error('❌ 监测出错:', err.message);
 });
 
-console.log('✨ 小克助理已开启实时监测模式...');
-n.start();
+// 启动
+mailListener.start();
