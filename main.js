@@ -1,47 +1,52 @@
 const http = require('http');
-const POP3Client = require('node-pop3');
+const tls = require('tls');
 
-// --- 1. Render 呼吸代码 ---
+// --- 1. Render 呼吸服务 ---
 const port = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('小克助理运行中...');
+  res.end('小克助理（底层直连版）运行中...');
 }).listen(port);
 
-// --- 2. 邮箱配置 ---
-const config = {
-  host: 'pop.163.com',
-  port: 995,
-  tls: true,
-  user: process.env.MAIL_USER,
-  pass: process.env.MAIL_PASS,
-};
-
-// --- 3. 核心抓取逻辑 (换用 Promise 封装) ---
+// --- 2. 核心抓取逻辑 (直接拉电话线) ---
 function checkEmail() {
-  console.log(`[${new Date().toLocaleString()}] 🔍 正在邮筒值班...`);
+  console.log(`[${new Date().toLocaleString()}] 🔍 正在拨号 163 邮筒...`);
   
-  const pop3 = new POP3Client(config);
-
-  // 这里的尝试是基于 node-pop3 库最原始的 command 命令
-  pop3.execute('STAT', (err, data) => {
-    if (err) {
-      console.error('❌ 访问邮筒失败:', err);
-    } else {
-      console.log('📩 邮筒连接成功！原始响应:', data);
-      // data 通常是 "+OK 3 12345" 这种格式，表示有 3 封邮件
-      const match = data.match(/\+OK\s+(\d+)\s+/);
-      if (match && parseInt(match[1]) > 0) {
-        console.log(`🎉 发现 ${match[1]} 封邮件！正在努力同步链接...`);
-      } else {
-        console.log('📭 邮筒空空如也。');
-      }
-    }
-    pop3.execute('QUIT');
+  const options = { host: 'pop.163.com', port: 995 };
+  const socket = tls.connect(options, () => {
+    console.log('☎️ 电话已接通，正在自报家门...');
   });
+
+  let step = 0;
+  socket.setEncoding('utf-8');
+
+  socket.on('data', (data) => {
+    // console.log('S:', data); // 调试用：查看服务器原始对话
+    if (data.includes('+OK')) {
+      if (step === 0) {
+        socket.write(`USER ${process.env.MAIL_USER}\r\n`);
+        step++;
+      } else if (step === 1) {
+        socket.write(`PASS ${process.env.MAIL_PASS}\r\n`);
+        step++;
+      } else if (step === 2) {
+        socket.write('STAT\r\n');
+        step++;
+      } else if (step === 3) {
+        console.log('📩 邮筒反馈：', data.trim());
+        socket.write('QUIT\r\n');
+      }
+    } else if (data.includes('-ERR')) {
+      console.error('❌ 邮筒拒接：', data.trim());
+      socket.end();
+    }
+  });
+
+  socket.on('end', () => console.log('📭 检查完毕，挂断电话。'));
+  socket.on('error', (err) => console.error('⚠️ 线路故障:', err.message));
 }
 
-// --- 4. 立即启动并循环 ---
-console.log('✨ 小克助理（底层驱动版）已就绪');
+// --- 3. 启动与循环 ---
+console.log('✨ 小克助理（原生直连版）已就绪');
 checkEmail(); 
-setInterval(checkEmail, 2 * 60 * 1000); // 2 分钟一次
+setInterval(checkEmail, 2 * 60 * 1000);
