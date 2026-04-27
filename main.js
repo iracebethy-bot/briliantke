@@ -1,59 +1,75 @@
 const http = require('http');
-const Pop3Client = require('node-pop3');
+const tls = require('tls');
 
 // --- 1. Render 呼吸服务 ---
 const port = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('小克助理（POP3稳定版）运行中...');
+  res.end('小克助理（原生协议版）运行中...');
 }).listen(port);
 
-// --- 2. 邮箱配置 ---
-const config = {
-  host: 'pop.163.com',
-  port: 995,
-  tls: true,
-  user: process.env.MAIL_USER,
-  pass: process.env.MAIL_PASS
-};
+// --- 2. 核心 POP3 逻辑 (原生 TLS 直连) ---
+function checkEmail() {
+  console.log(`[${new Date().toLocaleString()}] 🔍 正在接入 163 邮筒...`);
+  
+  const socket = tls.connect({
+    host: 'pop.163.com',
+    port: 995,
+    rejectUnauthorized: false
+  });
 
-// --- 3. 抓取逻辑 ---
-async function checkMail() {
-  console.log(`[${new Date().toLocaleString()}] 🔍 正在邮筒值班...`);
-  const pop3 = new Pop3Client(config);
+  let step = 0;
+  socket.setEncoding('utf-8');
 
-  try {
-    // 获取列表
-    const list = await pop3.command('LIST');
-    // list 返回格式通常是 [['1', 'size'], ['2', 'size']]
-    if (list && list.length > 0) {
-      const lastMsgIdx = list.length; // 最新一封的索引
-      console.log(`📩 发现 ${lastMsgIdx} 封邮件，正在读取最新的一封...`);
-      
-      const msg = await pop3.command('RETR', lastMsgIdx.toString());
-      
-      const urlRegex = /(https?:\/\/[^\s]+)/g;
-      const urls = msg.match(urlRegex);
-      
-      if (urls) {
-        console.log(`🔗 成功抓取链接: ${urls.join(', ')}`);
-      } else {
-        console.log('📝 收到新邮件，但没找到链接。');
+  socket.on('data', (data) => {
+    // console.log('S:', data); // 调试用
+    if (data.includes('+OK')) {
+      switch(step) {
+        case 0:
+          socket.write(`USER ${process.env.MAIL_USER}\r\n`);
+          step++;
+          break;
+        case 1:
+          socket.write(`PASS ${process.env.MAIL_PASS}\r\n`);
+          step++;
+          break;
+        case 2:
+          socket.write('STAT\r\n');
+          step++;
+          break;
+        case 3:
+          const match = data.match(/\+OK\s+(\d+)\s+/);
+          const count = match ? match[1] : 0;
+          if (count > 0) {
+            console.log(`📩 邮筒反馈：发现 ${count} 封邮件，正在读取最新内容...`);
+            socket.write(`RETR ${count}\r\n`);
+            step++;
+          } else {
+            console.log('📭 邮筒目前是空的。');
+            socket.write('QUIT\r\n');
+          }
+          break;
+        case 4:
+          const urlRegex = /(https?:\/\/[^\s]+)/g;
+          const urls = data.match(urlRegex);
+          if (urls) {
+            console.log(`🔗 成功抓取链接: ${urls[0]}`); // 只取第一个链接
+          } else {
+            console.log('📝 收到邮件，但未提取到有效链接。');
+          }
+          socket.write('QUIT\r\n');
+          break;
       }
-    } else {
-      console.log('📭 邮筒空空如也。');
+    } else if (data.includes('-ERR')) {
+      console.error('❌ 邮筒返回错误:', data.trim());
+      socket.end();
     }
-    await pop3.command('QUIT');
-  } catch (err) {
-    if (err.message.includes('permission denied') || err.message.includes('login failed')) {
-      console.error('❌ 登录失败！请检查：1. 授权码是否过期？ 2. 网页端POP3服务是否开启？');
-    } else {
-      console.error('⚠️ 遇到状况:', err.message);
-    }
-  }
+  });
+
+  socket.on('error', (err) => console.error('⚠️ 通讯故障:', err.message));
 }
 
-// --- 4. 启动 ---
-console.log('✨ 小克助理（POP3版）已就绪');
-checkMail(); // 立即执行一次
-setInterval(checkMail, 3 * 60 * 1000); // 每 3 分钟检查一次
+// --- 3. 启动 ---
+console.log('✨ 小克助理（原生协议版）已就绪');
+checkEmail();
+setInterval(checkEmail, 5 * 60 * 1000); // 5 分钟检查一次
