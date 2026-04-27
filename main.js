@@ -1,57 +1,59 @@
 const http = require('http');
-const { MailListener } = require('mail-listener5');
+const Pop3Client = require('node-pop3');
 
 // --- 1. Render 呼吸服务 ---
 const port = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('小克助理（终极绕过版）运行中...');
+  res.end('小克助理（POP3稳定版）运行中...');
 }).listen(port);
 
-// --- 2. 核心配置 (注入网易官方 ID 标识) ---
-const mailListener = new MailListener({
-  username: process.env.MAIL_USER,
-  password: process.env.MAIL_PASS,
-  host: "imap.163.com",
-  port: 993,
+// --- 2. 邮箱配置 ---
+const config = {
+  host: 'pop.163.com',
+  port: 995,
   tls: true,
-  // 核心：模拟网易官方网页版 ID，彻底解决 Unsafe Login
-  customInterface: "ID (" + JSON.stringify({
-    name: "NeteaseMailAntispam",
-    version: "1.0.0",
-    vendor: "netease",
-    "support-email": "kefu@188.com"
-  }) + ")",
-  connTimeout: 20000,
-  authTimeout: 20000,
-  autostart: true,
-  mailbox: "INBOX",
-  markSeen: false 
-});
+  user: process.env.MAIL_USER,
+  pass: process.env.MAIL_PASS
+};
 
-// --- 3. 监听逻辑 ---
-mailListener.on("server:connected", () => {
-  console.log(`[${new Date().toLocaleString()}] ✅ 芜湖！成功进入 163 邮筒！小克正式上班！`);
-});
+// --- 3. 抓取逻辑 ---
+async function checkMail() {
+  console.log(`[${new Date().toLocaleString()}] 🔍 正在邮筒值班...`);
+  const pop3 = new Pop3Client(config);
 
-mailListener.on("mail", (mail) => {
-  console.log(`[${new Date().toLocaleString()}] 📩 抓到新邮件：${mail.subject || '无主题'}`);
-  const content = mail.text || "";
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const urls = content.match(urlRegex);
-  
-  if (urls) {
-    console.log(`🔗 抓取到链接: ${urls.join(', ')}`);
+  try {
+    // 获取列表
+    const list = await pop3.command('LIST');
+    // list 返回格式通常是 [['1', 'size'], ['2', 'size']]
+    if (list && list.length > 0) {
+      const lastMsgIdx = list.length; // 最新一封的索引
+      console.log(`📩 发现 ${lastMsgIdx} 封邮件，正在读取最新的一封...`);
+      
+      const msg = await pop3.command('RETR', lastMsgIdx.toString());
+      
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const urls = msg.match(urlRegex);
+      
+      if (urls) {
+        console.log(`🔗 成功抓取链接: ${urls.join(', ')}`);
+      } else {
+        console.log('📝 收到新邮件，但没找到链接。');
+      }
+    } else {
+      console.log('📭 邮筒空空如也。');
+    }
+    await pop3.command('QUIT');
+  } catch (err) {
+    if (err.message.includes('permission denied') || err.message.includes('login failed')) {
+      console.error('❌ 登录失败！请检查：1. 授权码是否过期？ 2. 网页端POP3服务是否开启？');
+    } else {
+      console.error('⚠️ 遇到状况:', err.message);
+    }
   }
-});
+}
 
-mailListener.on("error", (err) => {
-  if (err.message.includes('Unsafe Login')) {
-    console.error('❌ 仍然报错不安全。请检查：1. 授权码是否填错？ 2. 网页端安全提示是否有点确认？');
-  } else {
-    console.error('❌ 遇到新状况:', err.message);
-  }
-});
-
-console.log('✨ 小克正在使用“超级工牌”冲击 163 邮筒...');
-mailListener.start();
+// --- 4. 启动 ---
+console.log('✨ 小克助理（POP3版）已就绪');
+checkMail(); // 立即执行一次
+setInterval(checkMail, 3 * 60 * 1000); // 每 3 分钟检查一次
