@@ -1,52 +1,45 @@
 const http = require('http');
-const tls = require('tls');
+const notifier = require('mail-notifier');
 
-// --- 1. Render 呼吸服务 ---
+// 1. Render 呼吸服务
 const port = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('小克助理（底层直连版）运行中...');
+  res.end('小克助理（工业级版）运行中...');
 }).listen(port);
 
-// --- 2. 核心抓取逻辑 (直接拉电话线) ---
-function checkEmail() {
-  console.log(`[${new Date().toLocaleString()}] 🔍 正在拨号 163 邮筒...`);
+// 2. 邮箱配置 (直接使用 IMAP，163 邮箱也支持，比 POP3 更实时)
+const imapConfig = {
+  user: process.env.MAIL_USER,
+  password: process.env.MAIL_PASS, // 你的授权码
+  host: "imap.163.com",
+  port: 993,
+  tls: true,
+  autostart: true
+};
+
+// 3. 监听逻辑
+const n = notifier(imapConfig);
+
+n.on('end', () => n.start()); // 断开自动重连
+
+n.on('mail', (mail) => {
+  console.log(`[${new Date().toLocaleString()}] 📩 收到新邮件! 来自: ${mail.from[0].address}`);
+  console.log(`主题: ${mail.subject}`);
   
-  const options = { host: 'pop.163.com', port: 995 };
-  const socket = tls.connect(options, () => {
-    console.log('☎️ 电话已接通，正在自报家门...');
-  });
+  // 查找内容里的链接
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const urls = mail.text.match(urlRegex);
+  
+  if (urls) {
+    console.log(`🔗 抓到链接: ${urls.join(', ')}`);
+    // 后续可以在这里加写入 GitHub 的代码
+  }
+});
 
-  let step = 0;
-  socket.setEncoding('utf-8');
+n.on('error', (err) => {
+  console.error('❌ 监测出错:', err.message);
+});
 
-  socket.on('data', (data) => {
-    // console.log('S:', data); // 调试用：查看服务器原始对话
-    if (data.includes('+OK')) {
-      if (step === 0) {
-        socket.write(`USER ${process.env.MAIL_USER}\r\n`);
-        step++;
-      } else if (step === 1) {
-        socket.write(`PASS ${process.env.MAIL_PASS}\r\n`);
-        step++;
-      } else if (step === 2) {
-        socket.write('STAT\r\n');
-        step++;
-      } else if (step === 3) {
-        console.log('📩 邮筒反馈：', data.trim());
-        socket.write('QUIT\r\n');
-      }
-    } else if (data.includes('-ERR')) {
-      console.error('❌ 邮筒拒接：', data.trim());
-      socket.end();
-    }
-  });
-
-  socket.on('end', () => console.log('📭 检查完毕，挂断电话。'));
-  socket.on('error', (err) => console.error('⚠️ 线路故障:', err.message));
-}
-
-// --- 3. 启动与循环 ---
-console.log('✨ 小克助理（原生直连版）已就绪');
-checkEmail(); 
-setInterval(checkEmail, 2 * 60 * 1000);
+console.log('✨ 小克助理已开启实时监测模式...');
+n.start();
