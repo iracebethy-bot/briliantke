@@ -1,12 +1,7 @@
 {
   "name": "briliantke-bot",
   "version": "1.0.0",
-  "description": "小克助理监测服务",
   "main": "main.js",
-  "dependencies": {
-    "node-pop3": "^0.1.10"
-  },
-  "scripts": {
-    "start": "node main.js"
-  }
+  "dependencies": {}, 
+  "scripts": { "start": "node main.js" }
 }
