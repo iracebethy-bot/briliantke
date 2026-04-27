@@ -1,18 +1,12 @@
 {
   "name": "briliantke-bot",
   "version": "1.0.0",
-  "description": "小克助理邮箱监测服务",
+  "description": "小克助理监测服务",
   "main": "main.js",
   "dependencies": {
-    "mail-notifier": "^0.6.0"
+    "mail-listener5": "^2.1.0"
   },
   "scripts": {
-    "start": "node main.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "engines": {
-    "node": ">=14.0.0"
-  },
-  "author": "煊",
-  "license": "ISC"
+    "start": "node main.js"
+  }
 }
